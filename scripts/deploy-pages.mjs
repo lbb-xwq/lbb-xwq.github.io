@@ -14,7 +14,15 @@
  *   PAGES_SKIP_BUILD  设为 1 则复用现有 out/，不重新构建
  */
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -26,6 +34,23 @@ const ACCOUNT = process.env.PAGES_GH_ACCOUNT ?? 'lbb-xwq';
 /** 跑命令并把输出透传到终端 */
 function run(cmd, args, opts = {}) {
   return execFileSync(cmd, args, { stdio: 'inherit', ...opts });
+}
+
+/**
+ * 递归复制目录。
+ *
+ * 不用 fs.cpSync：在 Windows 上只要「源路径含非 ASCII 字符」且「复制的是目录」，
+ * cpSync 会让 node 进程直接挂掉 —— 退出码 127，没有任何异常和报错，极难排查。
+ * 本项目的路径里有「工作文档」，正好踩中。
+ * readdirSync / mkdirSync / copyFileSync 走的是另一套实现，实测正常。
+ */
+function copyTree(src, dest) {
+  if (statSync(src).isDirectory()) {
+    mkdirSync(dest, { recursive: true });
+    for (const entry of readdirSync(src)) copyTree(join(src, entry), join(dest, entry));
+  } else {
+    copyFileSync(src, dest);
+  }
 }
 
 /** 跑命令但捕获输出，出错时把 token 从报错信息里抹掉再抛 */
@@ -60,9 +85,12 @@ if (!secret) throw new Error(`拿不到 ${ACCOUNT} 的 gh token，先执行：gh
 // 3) 产物拷进临时目录，作为一次孤立提交推上去
 const dist = mkdtempSync(join(tmpdir(), 'pages-'));
 try {
-  cpSync('out', dist, { recursive: true });
+  // 拷 out/ 的“内容”而不是 out/ 本身，否则站点会多一层 /out 路径。
+  // copyTree 内部用 readdirSync，会带上 .nojekyll 这类点文件。
+  copyTree('out', dist);
 
-  // core.autocrlf=false：Windows 上默认会把换行 CRLF 化，字符串里的 token 必须原样进 URL 所以不能动
+  // core.autocrlf=false：避免 Windows 上把产物里的 LF 改写成 CRLF，
+  // 构建产物应该原样进仓库，不做任何换行改写。
   const git = (args) => capture('git', ['-c', 'core.autocrlf=false', ...args], { cwd: dist });
 
   git(['init', '-q', '-b', BRANCH]);
