@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>对比：参考站实测坐标 vs 我的页面</title>
+<style>
+  body{margin:0;background:#0b0b0b;color:#e8e8e8;font:12px/1.6 ui-monospace,Consolas,monospace}
+  .bar{display:flex;gap:16px;align-items:center;padding:10px 14px;border-bottom:1px solid #262626;position:sticky;top:0;background:#0b0b0b;z-index:9}
+  .bar b{font-weight:500;color:#fff}
+  .bar a{color:#9ad}
+  table{border-collapse:collapse;width:100%}
+  th,td{text-align:left;padding:5px 10px;border-bottom:1px solid #1d1d1d;white-space:nowrap}
+  th{color:#8a8a8a;font-weight:400}
+  .ok{color:#7ee787}.no{color:#ff9d9d}
+  .wrap{display:grid;grid-template-columns:minmax(0,1fr) 430px;gap:0}
+  .stage{padding:14px;overflow:auto}
+  .frameBox{position:relative;width:883px;height:499px;border:1px solid #333;overflow:hidden}
+  iframe{position:absolute;left:0;top:0;width:1424px;height:805px;border:0;transform:scale(.62);transform-origin:0 0}
+  #overlay{position:absolute;left:0;top:0;width:1424px;height:805px;pointer-events:none;transform:scale(.62);transform-origin:0 0}
+  #overlay .o{position:absolute;border:1px solid #ff6b6b;background:rgba(255,107,107,.07)}
+  #overlay .o span{position:absolute;left:0;top:-13px;font-size:9px;color:#ff9d9d;white-space:nowrap}
+  #overlay .o.g{border-color:#6bb7ff;background:rgba(107,183,255,.07)}
+  #overlay .o.g span{color:#9fd0ff}
+  .side{border-left:1px solid #262626;padding:12px 14px;max-height:100vh;overflow:auto}
+  h3{font-size:12px;font-weight:500;color:#fff;margin:14px 0 6px}
+  .note{color:#8a8a8a}
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>左：我的页面（实时 iframe，1424×805）</b>
+  <label><input type="checkbox" id="tg" checked> 叠加参考站实测框</label>
+  <label><input type="checkbox" id="tgMine"> 叠加我的实测框</label>
+  <a href="http://localhost:3210/" target="_blank">新窗口打开我的站点</a>
+  <a href="https://www.saifullah.dev/" target="_blank">新窗口打开参考站（禁止内嵌，需新窗口）</a>
+</div>
+<div class="wrap">
+  <div class="stage">
+    <div class="frameBox">
+      <iframe id="f" src="/"></iframe>
+      <div id="overlay"></div>
+    </div>
+    <p class="note" id="hint">先在右侧点「进入站点（CLICK TO ENTER）」，再读表。红框 = 参考站实测位置；蓝框 = 我的位置。</p>
+  </div>
+  <div class="side">
+    <h3>参考站实测（1424×805）</h3>
+    <table id="tblRef"></table>
+    <h3>逐项对比</h3>
+    <table id="tblDiff"><thead><tr><th>项目</th><th>参考</th><th>我的</th><th>结果</th></tr></thead><tbody></tbody></table>
+    <h3>说明</h3>
+    <p class="note">参考站发 X-Frame-Options: DENY，无法同屏内嵌，所以用「实测坐标框」叠加在她自己的截图上做对齐检查；数值来自无头 Chrome 对两边同一套量测脚本的输出。</p>
+  </div>
+</div>
+<script>
+// 参考站实测坐标（来自无头 Chrome CDP 量测，视口 1424x805）
+var REF = [
+  { n:'heroMain 标题区', r:[80,277,896,251] },
+  { n:'h1', r:[80,277,896,126] },
+  { n:'info 区', r:[80,427,896,53] },
+  { n:'左毛玻璃面板', r:[16,16,696,773] },
+  { n:'heroCanvas', r:[20,0,1384,805], g:1 },
+  { n:'跑马灯(单行)', r:[712,32,712,43] },
+  { n:'右侧 HUD', r:[972,299,192,207] },
+  { n:'底部两列', r:[40,725,712,48] },
+  { n:'右下控件簇', r:[992,715,392,58] },
+  { n:'导航胶囊', r:[1064,715,320,58] },
+  { n:'声音键', r:[992,718,56,55] },
+  { n:'白图标块', r:[1335,724,40,40] },
+  { n:'齿轮', r:[1384,379,40,40] }
+];
+var $ = function (s) { return document.querySelector(s); };
+function drawOverlay(list, host) {
+  host.innerHTML = '';
+  list.forEach(function (it) {
+    var d = document.createElement('div');
+    d.className = 'o' + (it.g ? ' g' : '');
+    d.style.left = it.r[0] + 'px'; d.style.top = it.r[1] + 'px';
+    d.style.width = it.r[2] + 'px'; d.style.height = it.r[3] + 'px';
+    var s = document.createElement('span'); s.textContent = it.n + ' [' + it.r.join(',') + ']';
+    d.appendChild(s); host.appendChild(d);
+  });
+}
+drawOverlay(REF, $('#overlay'));
+var t = $('#tblRef');
+REF.forEach(function (it) {
+  t.innerHTML += '<tr><td>' + it.n + '</td><td>[' + it.r.join(', ') + ']</td></tr>';
+});
+// 量测我的页面（同源 iframe）
+function measure() {
+  var d = $('#f').contentDocument; if (!d) return null;
+  var w = $('#f').contentWindow;
+  var box = function (el) { if (!el) return null; var b = el.getBoundingClientRect();
+    return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)]; };
+  var canv = [].slice.call(d.querySelectorAll('canvas')).map(function (c) { return box(c); });
+  return {
+    h1: box(d.querySelector('h1')),
+    cluster: box(d.querySelector('header')),
+    pill: box(d.querySelector('header button[aria-controls]')),
+    sound: box(d.querySelector('header button[aria-pressed]')),
+    gear: box(d.querySelector('button[aria-controls="settings-panel"]')),
+    icon: box(d.querySelector('header button[aria-controls] span[aria-hidden]')),
+    canopy: canv.filter(function (r) { return r && r[2] > 1000 && r[0] > 0; })[0] || null,
+    docH: d.documentElement.scrollHeight,
+    overflowX: d.documentElement.scrollWidth - w.innerWidth,
+    entered: !d.querySelector('#preloader')
+  };
+}
+function row(name, ref, mine) {
+  var same = ref && mine && ref.join() === mine.join();
+  var html = '<tr><td>' + name + '</td><td>[' + (ref ? ref.join(', ') : '-') + ']</td><td>[' + (mine ? mine.join(', ') : '-') + ']</td><td class="' + (same ? 'ok' : 'no') + '">' + (same ? '一致' : '差异') + '</td></tr>';
+  $('#tblDiff tbody').innerHTML += html;
+}
+function refresh() {
+  var m = measure(); if (!m) return;
+  $('#tblDiff tbody').innerHTML = '';
+  var R = REF.reduce(function (a, i) { a[i.n] = i.r; return a; }, {});
+  row('h1（大标题）', R['h1'], m.h1);
+  row('heroCanvas（粒子层）', R['heroCanvas'], m.canopy);
+  row('右下控件簇', R['右下控件簇'], m.cluster);
+  row('导航胶囊', R['导航胶囊'], m.pill);
+  row('声音键', R['声音键'], m.sound);
+  row('齿轮', R['齿轮'], m.gear);
+  row('白图标块', R['白图标块'], m.icon);
+  $('#hint').textContent = 'iframe 内状态：' + (m.entered ? '已进入站点' : '仍在预加载器') + ' | docH=' + m.docH + ' | 横向溢出=' + m.overflowX;
+  if ($('#tgMine').checked) {
+    drawOverlay([
+      { n:'我的 h1', r:m.h1 }, { n:'我的控件簇', r:m.cluster }, { n:'我的胶囊', r:m.pill }, { n:'我的齿轮', r:m.gear }
+    ].filter(function (x) { return x.r; }), $('#overlay'));
+  } else { drawOverlay(REF, $('#overlay')); }
+}
+$('#tg').addEventListener('change', function () { $('#overlay').style.display = this.checked ? '' : 'none'; });
+$('#tgMine').addEventListener('change', refresh);
+$('#f').addEventListener('load', function () {
+  setTimeout(function () {
+    try {
+      var d = $('#f').contentDocument;
+      var b = [].slice.call(d.querySelectorAll('button')).filter(function (x) { return /enter/i.test(x.textContent || ''); })[0];
+      if (b) b.click();
+    } catch (e) {}
+    setTimeout(refresh, 3200);
+  }, 4200);
+});
+setTimeout(refresh, 3000);
+</script>
+</body>
+</html>

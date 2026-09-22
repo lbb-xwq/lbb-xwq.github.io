@@ -1,0 +1,542 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   FONTS
+   参考站用的是自托管商用字体 denominary(sans) / csGenio(mono)，
+   不能直接复用（授权风险）。这里换成视觉与覆盖面对等的开源字体：
+   Archivo（可变字重，中性技术感） + IBM Plex Mono。
+   ============================================================ */
+@font-face {
+  font-family: 'Archivo';
+  src: url('/fonts/archivo-var-latin.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2212, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Plex Mono';
+  src: url('/fonts/ibm-plex-mono-400-latin.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plex Mono';
+  src: url('/fonts/ibm-plex-mono-500-latin.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+}
+
+/* ============================================================
+   TOKENS
+   颜色取自参考站实测值：accent 253 255 255 / outline 29 29 29 /
+   outline-2 45 45 45 / fade 21 21 21，底色纯黑、面板 #020202。
+   ============================================================ */
+:root {
+  --c-bg: 0 0 0;
+  --c-solid: 2 2 2;
+  --c-panel: 10 10 10;
+  --c-fade: 21 21 21;
+  --c-line: 29 29 29;
+  --c-line-2: 45 45 45;
+  --c-fg: 253 255 255;
+  --c-dim: 140 140 140;
+  --c-live: 255 255 255;
+  --c-signal: 255 255 255;
+
+  --font-display: 'Archivo', 'HarmonyOS Sans SC', 'PingFang SC', system-ui, sans-serif;
+  --font-mono: 'Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-sans: system-ui, 'HarmonyOS Sans SC', 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+
+  --radius-panel: 6px; /* 参考站 .375rem */
+  --hud-track: 0.18em;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-quint: cubic-bezier(0.83, 0, 0.17, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --z-canvas: 0;
+  --z-content: 60;
+  --z-hud: 70;
+  --z-overlay: 90;
+  --z-preloader: 100;
+  --z-cursor: 120;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: rgb(var(--c-bg));
+  color: rgb(var(--c-fg));
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* 参考站隐藏原生滚动条（滚动由 ScrollSmoother 接管） */
+html {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+}
+html[data-motion='reduced'] {
+  scroll-behavior: auto;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+::selection {
+  background: rgb(var(--c-signal));
+  color: #000;
+}
+
+:focus-visible {
+  outline: 1px solid rgb(var(--c-signal));
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+img,
+video,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/*
+ * 系统光标**不再隐藏**。
+ *
+ * 原来这里写的是 html[data-cursor='custom'] 及其子孙全部 cursor:none，
+ * 用自定义光标去替代系统光标；但切换主题 / 重新挂载时，自定义光标层
+ * （canvas 拖尾 + 准星）还没画出来，系统光标又已被隐藏 —— 结果鼠标直接看不见。
+ * 现在改成：自定义光标只做「叠加增强」，系统光标始终保留，任何状态下都能看到指针。
+ * 想恢复参考站那种完全替代的效果，只在这一个规则里处理即可，
+ * 但前提是自定义光标层在任何主题/动效切换下都保证已就绪。
+ */
+
+/* ============================================================
+   UTILITIES
+   ============================================================ */
+@layer components {
+  /* HUD 小标签：等宽 + 大写 + 字距，全站所有状态行都用它 */
+  .hud {
+    font-family: var(--font-mono);
+    font-size: var(--hud-size, 10px);
+    letter-spacing: var(--hud-track);
+    text-transform: uppercase;
+    line-height: 1.5;
+  }
+  .hud-sm {
+    font-family: var(--font-mono);
+    font-size: var(--hud-sm-size, 8px);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    line-height: 1.7;
+  }
+  .hairline-t {
+    border-top: 1px solid rgb(var(--c-line));
+  }
+  .hairline-b {
+    border-bottom: 1px solid rgb(var(--c-line));
+  }
+  .panel-glass {
+    background: rgba(10, 10, 10, 0.55);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgb(var(--c-line));
+    border-radius: var(--radius-panel);
+  }
+  /* 参考站的噪点叠加：8 级 steps() 抖动，这里用程序化 SVG 噪点替代那张 900KB PNG */
+  .noise-screen {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.05;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+    animation: noise-jitter 0.2s steps(8) infinite;
+  }
+  .scanlines::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.045) 0px,
+      rgba(255, 255, 255, 0.045) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  }
+}
+
+/* ============================================================
+   首页字号整体上调
+   ------------------------------------------------------------
+   .hud / .hud-sm 是全站通用标签（60+ 处引用），直接改默认值会连累
+   /about、/projects、/contact 与设置面板。所以这里不动默认值，
+   只在首页根节点上覆盖两个变量，靠 CSS 变量继承把字号放大一档。
+   其他页面读不到这两个变量，仍走 var(..., 10px) / var(..., 8px) 回落值。
+   ============================================================ */
+.home-hero {
+  --hud-size: 11.5px;
+  --hud-sm-size: 9.5px;
+}
+
+/* ============================================================
+   关于页字号上调
+   ------------------------------------------------------------
+   关于页的正文（sector 编号 / 标签胶囊 / 面包屑 / 帧序列读数）全部用 .hud(10px)
+   与 .hud-sm(8px)，8px 实际已经读不清。同样不动默认值，只在该页根节点覆盖变量。
+   注意：固定标题与帧序列会被 ViewportLayer portal 到 <body>，已经不在 main 的
+   继承链上，所以这三个根节点都要挂上 .about-page。
+   ============================================================ */
+.about-page {
+  --hud-size: 12px;
+  --hud-sm-size: 10px;
+}
+
+/* ============================================================
+   系统设置面板
+   ------------------------------------------------------------
+   ① 字号：面板里的标签同样是 .hud / .hud-sm 默认值（10px / 8px），8px 读不清；
+      只在本面板内覆盖变量，不影响其他地方。
+   ② 滚动条：与菜单面板策略一致 —— 保留可滚动，但永不显示滚动条（窄屏内容变长时也不露条）。
+   ============================================================ */
+#settings-panel {
+  --hud-size: 11.5px;
+  --hud-sm-size: 10px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+#settings-panel::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* ============================================================
+   KEYFRAMES
+   ============================================================ */
+/* 实测 @keyframes noise-animation + animation:noise-animation .2s steps(8) infinite：
+   动的是 background-position 0 0 -> 100% 100%（8 级抖动），不是 transform */
+@keyframes noise-jitter {
+  0% { background-position: 0 0; }
+  100% { background-position: 100% 100%; }
+}
+
+/* hero 扫描线：1px 渐变线 4s 线性循环（参考站 hero_scan） */
+/* 实测 @keyframes hero_scan：translateY(0) -> translateY(100vh)，4s linear infinite（无透明度变化） */
+@keyframes hero-scan {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(100vh); }
+}
+
+/* 标题扫光：background-clip:text 上跑一条亮带（参考站 hero_syncScan） */
+/* 实测 @keyframes hero_syncScan：竖向 75px 光带扫过视口，4s linear infinite */
+@keyframes sync-scan {
+  0% { background-position: 0 calc(16px - 75px); }
+  100% { background-position: 0 calc(100vh - 16px - 75px); }
+}
+
+/* 实测 @keyframes hero_pulse / preloader_pulse / pulse：50%{opacity:.5}，2s cubic-bezier(.4,0,.6,1) infinite */
+@keyframes live-pulse {
+  50% { opacity: 0.5; }
+}
+@keyframes ping {
+  75%, 100% { transform: scale(2); opacity: 0; }
+}
+
+@keyframes caret-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@keyframes marquee-x {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+
+@keyframes marquee-y {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, -50%, 0); }
+}
+
+@keyframes pre-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
+}
+
+/* 减少动效：关闭所有循环装饰动画 */
+html[data-motion='reduced'] .noise-screen,
+html[data-motion='reduced'] .scanlines::after {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .noise-screen,
+  .scanlines::after {
+    animation: none !important;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ============================================================
+   PRELOADER · 参考站实测的 8 块异形毛玻璃马赛克
+   ------------------------------------------------------------
+   实测（1440x900 视口 → 1424x805）：预加载器是 4x4 栅格里的 8 块面板，
+   每块的 rect / background / backdrop-filter 各不相同：
+
+     列1行1 [0,0,356,201]     rgba(0,0,0,0.08)  blur(6px)
+     列1行2 [0,201,356,201]   rgba(0,0,0,0.10)  blur(8px)
+     列1行3 [0,403,356,201]   rgba(0,0,0,0.10)  blur(8px)
+     列1行4 [0,604,356,201]   rgba(0,0,0,0.30)  blur(30px)
+     列2行1 [356,0,356,201]   rgba(0,0,0,0.10)  blur(8px)
+     列2行2-3 [356,201,356,403] rgba(0,0,0,0.25) blur(20px)   （masterPanel，跨 2 行）
+     列2行4 [356,604,356,201] rgba(0,0,0,0.10)  blur(8px)
+     列3-4行1-4 [712,0,712,805] rgba(0,0,0,0.55) blur(30px)   （simplePanel，跨 2 列 4 行）
+
+   面板本身是「透过去能看到下面内容的毛玻璃」，所以用 backdrop-filter 而不是纯色填充。
+   JSX 里仍然是 16 个 data-tile 元素（不改组件），这里用 nth-child 重新指派前 8 个、
+   并隐藏其余 8 个——纯 CSS 覆盖，零结构风险。
+   ============================================================ */
+#preloader {
+  gap: 0 !important;
+  background-color: transparent !important;
+}
+#preloader [data-tile] {
+  background-color: transparent !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+#preloader [data-tile]:nth-child(n + 9) {
+  display: none !important;
+}
+/* 1px 面板分隔线：实测多数面板是 rgba(255,255,255,0.024)，最右侧大块无边框 */
+#preloader [data-tile]:nth-child(-n + 7) {
+  border: 1px solid rgba(255, 255, 255, 0.024);
+}
+#preloader [data-tile]:nth-child(1) {
+  grid-area: 1 / 1 / 2 / 2;
+  background-color: rgba(0, 0, 0, 0.08) !important;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+#preloader [data-tile]:nth-child(2) {
+  grid-area: 2 / 1 / 3 / 2;
+  background-color: rgba(0, 0, 0, 0.1) !important;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+#preloader [data-tile]:nth-child(3) {
+  grid-area: 3 / 1 / 4 / 2;
+  background-color: rgba(0, 0, 0, 0.1) !important;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+#preloader [data-tile]:nth-child(4) {
+  grid-area: 4 / 1 / 5 / 2;
+  background-color: rgba(0, 0, 0, 0.3) !important;
+  -webkit-backdrop-filter: blur(30px);
+  backdrop-filter: blur(30px);
+}
+#preloader [data-tile]:nth-child(5) {
+  grid-area: 1 / 2 / 2 / 3;
+  background-color: rgba(0, 0, 0, 0.1) !important;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+#preloader [data-tile]:nth-child(6) {
+  grid-area: 2 / 2 / 4 / 3;
+  background-color: rgba(0, 0, 0, 0.25) !important;
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+}
+#preloader [data-tile]:nth-child(7) {
+  grid-area: 4 / 2 / 5 / 3;
+  background-color: rgba(0, 0, 0, 0.1) !important;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+#preloader [data-tile]:nth-child(8) {
+  grid-area: 1 / 3 / 5 / 5;
+  background-color: rgba(0, 0, 0, 0.55) !important;
+  -webkit-backdrop-filter: blur(30px);
+  backdrop-filter: blur(30px);
+}
+/* ============================================================
+   PRELOADER · 读数与控制条位置（参考站实测）
+   ------------------------------------------------------------
+   实测：preloader_preControls = [1064,717,320,56]（右下角，与导航胶囊同槽位），
+   另有一个 128px / line-height 128px / letter-spacing 2.56px 的百分比读数在
+   [1218,27,166,137]（右上角，右 40px、上 27px）。
+   实测的 preloader_preOverlay 里只有面板 + 控制条，没有被裁中的说明文字，
+   所以这里把居中区的品牌行/引擎名/日志隐藏（保留 DOM，只是不显示）。
+   ============================================================ */
+#preloader .scanlines > span.hud,
+#preloader .scanlines > p.hud,
+#preloader .scanlines > ul {
+  display: none !important;
+}
+#preloader div:has(> .tabular-nums) {
+  position: fixed;
+  top: 27px;
+  right: 40px;
+  left: auto;
+  margin: 0;
+  justify-content: flex-end;
+}
+#preloader .tabular-nums {
+  font-size: 128px;
+  line-height: 128px;
+  letter-spacing: 2.56px;
+}
+#preloader button {
+  position: fixed;
+  right: 40px;
+  bottom: 32px;
+  left: auto;
+  width: 320px;
+  height: 56px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(85, 85, 85, 0.3);
+  background-color: rgba(255, 255, 255, 0.05);
+  -webkit-backdrop-filter: blur(15px);
+  backdrop-filter: blur(15px);
+  border-radius: 12px;
+}
+/* ============================================================
+   PRELOADER · 加强进站遮罩（原来太淡）
+   ① 深底：保证进站第一屏是"盖住"的
+   ② 8 块 alpha 整体上提一档，同时保留块间深浅差（马赛克质感）
+   ============================================================ */
+#preloader { background-color: rgba(0, 0, 0, 0.45) !important; }
+#preloader [data-tile]:nth-child(1) { background-color: rgba(4, 4, 4, 0.55) !important; }
+#preloader [data-tile]:nth-child(2) { background-color: rgba(4, 4, 4, 0.6) !important; }
+#preloader [data-tile]:nth-child(3) { background-color: rgba(4, 4, 4, 0.6) !important; }
+#preloader [data-tile]:nth-child(4) { background-color: rgba(4, 4, 4, 0.8) !important; }
+#preloader [data-tile]:nth-child(5) { background-color: rgba(4, 4, 4, 0.6) !important; }
+#preloader [data-tile]:nth-child(6) { background-color: rgba(4, 4, 4, 0.72) !important; }
+#preloader [data-tile]:nth-child(7) { background-color: rgba(4, 4, 4, 0.6) !important; }
+#preloader [data-tile]:nth-child(8) { background-color: rgba(4, 4, 4, 0.88) !important; }
+/* ============================================================
+   NAV 面板
+   ------------------------------------------------------------
+   参考站实测：菜单只有高度 58 -> 557 / ~250ms 这一个动画；
+   面板内的 SVG 描边全程 static（dasharray/dashoffset = 3000px/3000px），
+   条目也是 opacity:1 / transform:none —— 没有 hover 位移。
+   所以这里不写 hover 过渡，只负责展开期间裁掉溢出内容。
+   （入场/退场的补间在 NavOverlay.tsx 里用 GSAP 写：面板高度 + y/scale + 淡入，
+   以及 header / 社交 2x2 / 编号项逐行错开 —— 按用户要求补上的，参考站没有。）
+   ============================================================ */
+#nav-overlay { overflow: hidden; }
+#nav-overlay > div:last-child { overflow-y: auto; }
+/* 菜单面板：保留「可滚动」，但永不显示滚动条（窄屏 maxHeight 生效时也不露条） */
+#nav-overlay,
+#nav-overlay > div:last-child {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+#nav-overlay::-webkit-scrollbar,
+#nav-overlay > div:last-child::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+/* ============================================================
+   废除「浅色主题」（我凭空加的，参考站没有）
+   ------------------------------------------------------------
+   实测参考站的 System 面板只有：
+     [01] Core Theme V_1.0   ← 只是版本信息行，没有深/浅色开关
+     [02] Audio Engine       ← Default / Ambient · Lo-fi / Digital Minimalism / Synthwave · Retro
+     [03] Performance Tier   ← High / Medium / Saver
+     System Active
+   无论怎么点，它的 html/body 始终是 rgb(0,0,0)、文字 rgb(255,255,255)。
+   也就是说：**全站只有深色**。浅色那套调色板是我自己加的，切过去文字看不清，
+   这里用 !important 把浅色覆盖全部作废（不管 data-theme 是什么，永远深色）。
+   下一步会把设置面板里的深/浅色开关直接删掉，改成参考站那样的只读版本信息行。
+   ============================================================ */
+:root[data-theme='light'] {
+  --c-bg: 0 0 0 !important;
+  --c-solid: 2 2 2 !important;
+  --c-panel: 10 10 10 !important;
+  --c-fade: 21 21 21 !important;
+  --c-line: 29 29 29 !important;
+  --c-line-2: 45 45 45 !important;
+  --c-fg: 253 255 255 !important;
+  --c-dim: 140 140 140 !important;
+  --c-live: 255 255 255 !important;
+  --c-signal: 255 255 255 !important;
+  color-scheme: dark !important;
+}
+:root[data-theme='light'] body {
+  background-color: rgb(0 0 0) !important;
+  color: rgb(253 255 255) !important;
+}
+:root[data-theme='light'] .panel-glass {
+  background-color: rgba(10, 10, 10, 0.55) !important;
+}
+:root[data-theme='light'] .noise-screen {
+  opacity: 0.05 !important;
+  mix-blend-mode: overlay !important;
+}
+:root[data-theme='light'] ::selection {
+  background-color: rgb(255 255 255) !important;
+  color: rgb(0 0 0) !important;
+}
+/* ============================================================
+   路由遮罩兜底（参考站实测 route-veil-failsafe）
+   ------------------------------------------------------------
+   实测：参考站给路由过渡遮罩加了 3.2s 延迟后 0.4s 自动隐藏，
+   防止路由切换卡住时屏幕被永远糊住。
+   ============================================================ */
+@keyframes route-veil-failsafe {
+  to { opacity: 0; visibility: hidden; }
+}
+
+/* ============================================================
+   纹理纵向滚动（参考站实测 scanline 10s linear infinite）
+   ------------------------------------------------------------
+   实测：参考站有一条 10s 线性循环的纵向纹理滚动，用在卡片/预加载器等地方。
+   这里加一个工具类，需要时加到元素上。
+   ============================================================ */
+@keyframes scanline {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 100%; }
+}
+.scanline-anim {
+  animation: scanline 10s linear infinite;
+}

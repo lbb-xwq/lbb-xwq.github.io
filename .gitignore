@@ -1,0 +1,15 @@
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+.env*.local
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+npm-debug.log*
+*.log
+
+# pi 内部笔记（个人站仓库不需要公开）
+.pi/
